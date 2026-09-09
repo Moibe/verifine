@@ -60,3 +60,27 @@ def test_verificacion_modelo_c_con_clave_invalida_no_sale_a_internet(cliente):
         },
     )
     assert r.status_code == 422
+
+
+def test_asistida_sin_playwright_da_501(cliente):
+    # Playwright es dependencia opcional; sin el, el endpoint debe decirlo
+    # claramente en vez de reventar.
+    pytest.importorskip  # noqa: B018
+    try:
+        import playwright  # noqa: F401
+    except ImportError:
+        r = cliente.post(
+            "/api/v1/verificacion/asistida",
+            json={"modelo": "e", "cic": "123456789", "id_ciudadano": "987654321"},
+        )
+        assert r.status_code == 501
+        assert "playwright install" in r.json()["detail"]
+
+
+def test_asistida_no_exige_captcha_token(cliente):
+    # A diferencia de /verificacion, aqui el token lo produce la persona en el
+    # navegador, asi que el payload no debe rechazarse por no traerlo.
+    from app.models.schemas import ConsultaModeloEFGH
+
+    c = ConsultaModeloEFGH(cic="123456789", id_ciudadano="987654321")
+    assert c.captcha_token is None

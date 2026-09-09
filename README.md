@@ -8,7 +8,8 @@ La API hace dos cosas distintas, y conviene no confundirlas:
 | | Que hace | Necesita internet | Necesita captcha |
 |---|---|---|---|
 | `/api/v1/validacion/*` | Valida la **estructura** de los datos | No | No |
-| `/api/v1/verificacion` | Consulta la **Lista Nominal** del INE | Si | Si |
+| `/api/v1/verificacion` | Consulta la **Lista Nominal** del INE | Si | Si (token) |
+| `/api/v1/verificacion/asistida` | Igual, pero abriendo un navegador | Si | Si (un clic) |
 
 Una clave estructuralmente valida puede perfectamente no existir en el padron.
 Solo el INE confirma lo segundo.
@@ -25,10 +26,50 @@ reenvia al INE. Resolver ese captcha es responsabilidad de quien llama:
 normalmente una persona en el frontend.
 
 Consecuencia practica: **no hay verificacion desatendida ni por lotes**. Cada
-consulta necesita un captcha nuevo resuelto por un humano.
+consulta necesita un captcha nuevo resuelto por una persona.
 
 Si Cloudflare bloquea la peticion, la API responde `502` diciendolo, en vez de
 inventar un resultado.
+
+## Modo asistido: automatizar todo menos el clic
+
+`/api/v1/verificacion/asistida` es la via comoda. Abre Chromium **con
+interfaz**, ubica el formulario del modelo correcto, captura todos los campos,
+y se detiene en el reCAPTCHA. En cuanto lo marcas, envia el formulario, lee la
+pagina de resultado y te devuelve el JSON ya parseado.
+
+Automatiza el trabajo repetitivo entero; lo unico que queda es un clic.
+
+```bash
+pip install -r requirements-navegador.txt
+playwright install chromium
+```
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/verificacion/asistida   -H "Content-Type: application/json"   -d '{"modelo": "d", "cic": "123456789", "ocr": "1234567890123"}'
+```
+
+Detalles que importan:
+
+- **No hay opcion `headless`.** En headless nadie podria marcar el captcha, y
+  el intento seria detectado igual. El navegador se abre siempre visible.
+- El perfil del navegador es **persistente** (`.navegador-perfil/`), asi que
+  las cookies sobreviven entre consultas y no arrancas de cero cada vez.
+- La peticion HTTP **queda abierta** mientras esperas (por omision hasta 180 s,
+  via `NAVEGADOR_TIMEOUT_CAPTCHA`). Si nadie marca el captcha: `408`.
+- Necesita un entorno con escritorio. **En un servidor headless no funciona**,
+  y eso es intencional.
+
+### Lo que este proyecto no hace
+
+No resuelve el reCAPTCHA por ti, ni con navegador headless ni con servicios de
+terceros. Es el control que el INE puso para distinguir a una persona de un
+programa, y saltarlo tampoco seria estable: reCAPTCHA v2 detecta navegadores
+automatizados y Cloudflare interpone challenges por encima.
+
+Si necesitas verificacion en volumen y desatendida, la ruta que aguanta
+auditoria es un convenio con el INE o un proveedor de identidad autorizado, no
+el formulario publico.
 
 ## Instalacion
 
@@ -57,7 +98,7 @@ Corresponden uno a uno con los formularios del INE:
 |---|---|---|
 | `c` | Modelos A, B y C | `clave_elector` (18), `numero_emision` (2), `ocr` (13) |
 | `d` | Modelo D | `cic` (9), `ocr` (13) |
-| `e` | Modelos E, F, G y H | `cic` (9), `id_ciudadano` (9) |
+| `e` | Modelos E, F, G, H, I y J | `cic` (9), `id_ciudadano` (9) |
 | `r` | Reporte de robo o extravio | `numero_reporte` (18) |
 
 Los campos numericos aceptan valores sin los ceros a la izquierda: la API los
@@ -130,6 +171,13 @@ pytest -q
 | `424` | Falta `captcha_token`, o el INE lo rechazo |
 | `502` | El INE no respondio, o Cloudflare bloqueo la consulta |
 | `503` | Consultas salientes deshabilitadas (`CONSULTA_INE_HABILITADA=false`) |
+
+Y en `/api/v1/verificacion/asistida`:
+
+| Codigo | Significado |
+|---|---|
+| `408` | Nadie marco el reCAPTCHA dentro del tiempo de espera |
+| `501` | Playwright no esta instalado |
 
 Valores de `estatus`: `vigente`, `no_vigente`, `no_encontrado`,
 `robo_extravio`, `datos_no_coinciden`, `indeterminado`.

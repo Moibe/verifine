@@ -22,6 +22,12 @@ class Settings(BaseSettings):
     # hace validacion local, util para desarrollo y pruebas.
     consulta_ine_habilitada: bool = True
 
+    # --- Modo asistido con Playwright ---
+    # El navegador se abre siempre con interfaz: el reCAPTCHA lo marca una
+    # persona. Por eso no hay opcion de headless.
+    navegador_perfil_dir: str = ".navegador-perfil"
+    navegador_timeout_captcha: float = 180.0
+
     # Limite de consultas por minuto por IP, para no golpear al INE.
     rate_limit_por_minuto: int = 10
 

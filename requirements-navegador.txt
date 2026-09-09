@@ -1,0 +1,4 @@
+-r requirements.txt
+# Modo asistido: automatiza el formulario del INE y espera a que una persona
+# marque el reCAPTCHA. Tras instalar: playwright install chromium
+playwright==1.49.1

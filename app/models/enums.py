@@ -6,7 +6,7 @@ class ModeloCredencial(str, Enum):
 
     C = "c"  # Modelos A, B y C: clave de elector + numero de emision + OCR
     D = "d"  # Modelo D: CIC + OCR
-    E = "e"  # Modelos E, F, G y H: CIC + identificador del ciudadano
+    E = "e"  # Modelos E, F, G, H, I y J: CIC + identificador del ciudadano
     R = "r"  # Reporte de robo o extravio
 
 

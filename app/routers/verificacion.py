@@ -17,6 +17,11 @@ from app.services.ine_client import (
     ErrorINE,
     INEClient,
 )
+from app.services.navegador import (
+    CaptchaNoResuelto,
+    NavegadorINE,
+    PlaywrightNoInstalado,
+)
 
 router = APIRouter(prefix="/api/v1", tags=["consulta INE"])
 
@@ -71,6 +76,65 @@ async def verificar(
         raise HTTPException(status.HTTP_424_FAILED_DEPENDENCY, str(exc)) from exc
     except BloqueoAntiBot as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
+    except ErrorINE as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
+
+    return ResultadoConsulta(
+        modelo=consulta.modelo,
+        estatus=estatus,
+        encontrado=estatus is EstatusLista.VIGENTE,
+        mensaje=mensaje,
+        consultado_en=momento,
+        analisis_clave=analisis,
+    )
+
+
+@router.post(
+    "/verificacion/asistida",
+    response_model=ResultadoConsulta,
+    summary="Consulta abriendo un navegador; el captcha lo marca una persona",
+    description=(
+        "Abre Chromium **con interfaz**, captura los campos del formulario del "
+        "INE automaticamente y espera a que una persona marque el reCAPTCHA. "
+        "Al marcarlo, envia y parsea el resultado sin mas intervencion.\n\n"
+        "Automatiza todo salvo el clic del captcha, que es precisamente el "
+        "control que distingue a una persona de un programa.\n\n"
+        "Requiere `pip install playwright && playwright install chromium`, y "
+        "un entorno con escritorio: no funciona en un servidor headless."
+    ),
+    responses={
+        408: {"description": "Nadie marco el reCAPTCHA a tiempo"},
+        501: {"description": "Playwright no esta instalado"},
+        502: {"description": "El navegador no pudo completar la consulta"},
+    },
+)
+async def verificar_asistida(
+    consulta: Consulta = Body(...),
+    settings: Settings = Depends(get_settings),
+) -> ResultadoConsulta:
+    if not settings.consulta_ine_habilitada:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Las consultas al INE estan deshabilitadas (consulta_ine_habilitada=false).",
+        )
+
+    analisis = None
+    if isinstance(consulta, ConsultaModeloC):
+        resultado = analizar(consulta.clave_elector)
+        analisis = ClaveElectorOut(**resultado.__dict__)
+        if not resultado.valida:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                {"mensaje": "La clave de elector no es estructuralmente valida", "errores": resultado.errores},
+            )
+
+    navegador = NavegadorINE(settings)
+    try:
+        estatus, mensaje, momento = await navegador.consultar_asistido(consulta)
+    except PlaywrightNoInstalado as exc:
+        raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, str(exc)) from exc
+    except CaptchaNoResuelto as exc:
+        raise HTTPException(status.HTTP_408_REQUEST_TIMEOUT, str(exc)) from exc
     except ErrorINE as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
 
