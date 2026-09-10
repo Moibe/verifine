@@ -9,3 +9,8 @@ venv/
 .coverage
 
 .navegador-perfil/
+
+# Datos personales de prueba: nunca deben entrar al repo
+cicEidentificadorciudadano.txt
+*credencial*.txt
+*datos-prueba*.txt
