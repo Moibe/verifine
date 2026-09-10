@@ -25,7 +25,7 @@ from app.models.schemas import (
     ConsultaModeloEFGH,
     ConsultaReporte,
 )
-from app.services.parser import parsear_resultado
+from app.services.parser import ResultadoParseado, parsear
 
 
 class ErrorINE(RuntimeError):
@@ -106,8 +106,8 @@ class INEClient:
             # Que falle el precalentamiento no debe abortar la consulta.
             pass
 
-    async def consultar(self, consulta) -> tuple[EstatusLista, str, str]:
-        """Devuelve (estatus, mensaje del INE, marca de tiempo ISO-8601)."""
+    async def consultar(self, consulta) -> tuple[ResultadoParseado, str]:
+        """Devuelve (resultado parseado, marca de tiempo ISO-8601)."""
         if not consulta.captcha_token:
             raise CaptchaRequerido(
                 "El formulario del INE exige reCAPTCHA. Envia el token en `captcha_token`."
@@ -133,9 +133,9 @@ class INEClient:
         if respuesta.status_code >= 400:
             raise ErrorINE(f"El INE respondio HTTP {respuesta.status_code}")
 
-        estatus, mensaje = parsear_resultado(cuerpo)
+        resultado = parsear(cuerpo)
 
-        if estatus is EstatusLista.INDETERMINADO and "captcha" in cuerpo.lower():
+        if resultado.estatus is EstatusLista.INDETERMINADO and "captcha" in cuerpo.lower():
             raise CaptchaRequerido("El INE rechazo el token de reCAPTCHA.")
 
-        return estatus, mensaje, momento
+        return resultado, momento

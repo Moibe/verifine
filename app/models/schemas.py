@@ -129,8 +129,25 @@ class ResultadoConsulta(BaseModel):
     modelo: ModeloCredencial
     estatus: EstatusLista
     encontrado: bool
-    mensaje: str = Field(description="Texto tal como lo devolvio el INE")
-    consultado_en: str = Field(description="Marca de tiempo ISO-8601 de la consulta")
+    mensaje: str = Field(description="Veredicto tal como lo redacto el INE")
+    consultado_en: str = Field(description="Marca de tiempo ISO-8601 de nuestra consulta")
+    campos: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Datos de la credencial que el INE devuelve en su tabla: CIC, clave "
+            "de elector, numero de emision, distrito federal y local, OCR, anio "
+            "de registro y de emision."
+        ),
+    )
+    vigencia_hasta: str | None = Field(
+        default=None, description="Fecha hasta la que el INE declara valida la credencial"
+    )
+    fecha_consulta: str | None = Field(
+        default=None, description="Fecha de consulta segun el propio INE"
+    )
+    fecha_actualizacion: str | None = Field(
+        default=None, description="Ultima actualizacion del padron segun el INE"
+    )
     analisis_clave: ClaveElectorOut | None = Field(
         default=None,
         description="Solo para modelo C, donde hay clave de elector que analizar",

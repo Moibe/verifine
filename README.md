@@ -40,6 +40,8 @@ pagina de resultado y te devuelve el JSON ya parseado.
 
 Automatiza el trabajo repetitivo entero; lo unico que queda es un clic.
 
+Probado de extremo a extremo contra el INE el 2026-09-10: los selectores, la espera del captcha y la captura del resultado funcionan.
+
 ```bash
 pip install -r requirements-navegador.txt
 playwright install chromium
@@ -183,7 +185,50 @@ Valores de `estatus`: `vigente`, `no_vigente`, `no_encontrado`,
 `robo_extravio`, `datos_no_coinciden`, `indeterminado`.
 
 `indeterminado` significa que el INE respondio algo que el parser no supo
-clasificar. El texto original siempre viaja en `mensaje`.
+clasificar. El veredicto original siempre viaja en `mensaje`.
+
+## Que devuelve el INE (verificado en vivo)
+
+Contrastado contra una consulta real el **2026-09-10** (modelo E). La respuesta
+trae una tabla de datos y un bloque de veredicto:
+
+```json
+{
+  "modelo": "e",
+  "estatus": "vigente",
+  "encontrado": true,
+  "mensaje": "Esta vigente como medio de identificacion. Tus datos se encuentran en el Padron Electoral. Sera valida hasta el 31 de diciembre de 2033",
+  "vigencia_hasta": "31 de diciembre de 2033",
+  "fecha_consulta": "10 de septiembre del 2026",
+  "fecha_actualizacion": "10 de septiembre del 2026 03:01",
+  "campos": {
+    "CIC": "111111111",
+    "Clave de elector": "ABCDEF90010109H123",
+    "Numero de emision": "1",
+    "Distrito Federal": "9",
+    "Distrito Local": "9",
+    "Numero OCR": "0000000000001",
+    "Anio de registro": "2012",
+    "Anio de emision": "2023"
+  }
+}
+```
+
+Dos cosas que solo se supieron consultando de verdad, y que estaban mal en la
+primera version:
+
+1. **El INE dice "Padron Electoral", no "Lista Nominal".** La frase que
+   buscabamos no aparece en ninguna respuesta.
+2. **El portal lleva un encabezado fijo que pregunta si tu credencial esta
+   vigente, y sale en TODAS las respuestas**, incluidas las negativas.
+   Clasificar sobre el texto completo de la pagina da un falso positivo
+   garantizado. Por eso el parser aisla primero el bloque de veredicto (los
+   `<h4>` y `<p class="lead">` que siguen a la tabla) y solo clasifica ahi
+   dentro.
+
+La respuesta real esta congelada, con los datos personales sustituidos por
+ficticios, en `tests/fixtures/resultado_vigente.html`. Si el INE cambia el
+formato, las pruebas de `tests/test_parser.py` lo delatan.
 
 ## Nota sobre datos personales
 

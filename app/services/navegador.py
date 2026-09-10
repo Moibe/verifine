@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 from app.config import Settings
 from app.models.enums import EstatusLista, ModeloCredencial
 from app.services.ine_client import ErrorINE
-from app.services.parser import parsear_resultado
+from app.services.parser import ResultadoParseado, parsear
 
 
 class PlaywrightNoInstalado(ErrorINE):
@@ -72,7 +72,20 @@ class NavegadorINE:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
 
-    async def consultar_asistido(self, consulta) -> tuple[EstatusLista, str, str]:
+    async def consultar_asistido(
+        self,
+        consulta,
+        *,
+        guardar_html: str | None = None,
+        notificar=None,
+    ) -> tuple[ResultadoParseado, str]:
+        """Ejecuta el flujo asistido.
+
+        guardar_html: ruta donde volcar el HTML crudo del resultado. Sirve para
+        ajustar el parser contra una respuesta real del INE.
+        notificar: callable(str) opcional para reportar avance al usuario.
+        """
+        avisar = notificar or (lambda _m: None)
         try:
             from playwright.async_api import async_playwright
         except ImportError as exc:  # pragma: no cover
@@ -97,6 +110,7 @@ class NavegadorINE:
             )
             try:
                 pagina = contexto.pages[0] if contexto.pages else await contexto.new_page()
+                avisar(f"Abriendo {self._settings.ine_base_url}")
                 await pagina.goto(self._settings.ine_base_url, wait_until="domcontentloaded")
 
                 # 1. Capturar los campos del formulario que corresponde.
@@ -104,11 +118,21 @@ class NavegadorINE:
                     selector = f'{cfg["form"]} input[name="{name}"]'
                     await pagina.wait_for_selector(selector, timeout=15_000)
                     await pagina.fill(selector, valores[name])
+                    avisar(f"Campo {name} capturado")
 
                 # 2. Traer el captcha a la vista y esperar a la persona.
                 await pagina.locator(cfg["captcha"]).scroll_into_view_if_needed()
                 token_llenado = (
                     f'{cfg["captcha"]} textarea[name="g-recaptcha-response"]'
+                )
+                # Diagnostico: si el textarea no existe dentro del div del
+                # widget, la espera de abajo nunca terminaria. Mejor decirlo.
+                existe = await pagina.evaluate(
+                    "sel => !!document.querySelector(sel)", token_llenado
+                )
+                avisar(
+                    f"Widget de captcha listo (textarea presente: {existe}). "
+                    "Marca el reCAPTCHA en la ventana del navegador."
                 )
                 try:
                     await pagina.wait_for_function(
@@ -128,8 +152,14 @@ class NavegadorINE:
                     await pagina.click(f'{cfg["form"]} button[type="submit"]')
 
                 html = await pagina.content()
+                avisar(f"Resultado recibido de {pagina.url}")
+
+                if guardar_html:
+                    import pathlib
+
+                    pathlib.Path(guardar_html).write_text(html, encoding="utf-8")
+                    avisar(f"HTML crudo guardado en {guardar_html}")
             finally:
                 await contexto.close()
 
-        estatus, mensaje = parsear_resultado(html)
-        return estatus, mensaje, datetime.now(timezone.utc).isoformat()
+        return parsear(html), datetime.now(timezone.utc).isoformat()

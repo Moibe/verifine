@@ -26,6 +26,22 @@ from app.services.navegador import (
 router = APIRouter(prefix="/api/v1", tags=["consulta INE"])
 
 
+def _respuesta(modelo, resultado, momento, analisis) -> ResultadoConsulta:
+    """Traduce el resultado parseado a la respuesta de la API."""
+    return ResultadoConsulta(
+        modelo=modelo,
+        estatus=resultado.estatus,
+        encontrado=resultado.estatus is EstatusLista.VIGENTE,
+        mensaje=resultado.veredicto,
+        consultado_en=momento,
+        campos=resultado.campos,
+        vigencia_hasta=resultado.vigencia_hasta,
+        fecha_consulta=resultado.fecha_consulta,
+        fecha_actualizacion=resultado.fecha_actualizacion,
+        analisis_clave=analisis,
+    )
+
+
 def get_client(request: Request) -> INEClient:
     return request.app.state.ine_client
 
@@ -71,7 +87,7 @@ async def verificar(
             )
 
     try:
-        estatus, mensaje, momento = await cliente.consultar(consulta)
+        resultado, momento = await cliente.consultar(consulta)
     except CaptchaRequerido as exc:
         raise HTTPException(status.HTTP_424_FAILED_DEPENDENCY, str(exc)) from exc
     except BloqueoAntiBot as exc:
@@ -79,14 +95,7 @@ async def verificar(
     except ErrorINE as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
 
-    return ResultadoConsulta(
-        modelo=consulta.modelo,
-        estatus=estatus,
-        encontrado=estatus is EstatusLista.VIGENTE,
-        mensaje=mensaje,
-        consultado_en=momento,
-        analisis_clave=analisis,
-    )
+    return _respuesta(consulta.modelo, resultado, momento, analisis)
 
 
 @router.post(
@@ -130,7 +139,7 @@ async def verificar_asistida(
 
     navegador = NavegadorINE(settings)
     try:
-        estatus, mensaje, momento = await navegador.consultar_asistido(consulta)
+        resultado, momento = await navegador.consultar_asistido(consulta)
     except PlaywrightNoInstalado as exc:
         raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, str(exc)) from exc
     except CaptchaNoResuelto as exc:
@@ -138,11 +147,4 @@ async def verificar_asistida(
     except ErrorINE as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
 
-    return ResultadoConsulta(
-        modelo=consulta.modelo,
-        estatus=estatus,
-        encontrado=estatus is EstatusLista.VIGENTE,
-        mensaje=mensaje,
-        consultado_en=momento,
-        analisis_clave=analisis,
-    )
+    return _respuesta(consulta.modelo, resultado, momento, analisis)
