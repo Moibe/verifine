@@ -83,6 +83,68 @@ pip install -r requirements-dev.txt
 cp .env.example .env
 ```
 
+## La consola
+
+Si no quieres levantar la API, hay un CLI que pinta el resultado en la
+terminal:
+
+```bash
+# Consulta al INE: abre el navegador y espera a que marques el captcha
+python -m app.cli verificar --modelo e --cic 123456789 --id 987654321
+
+# Los mismos datos, pero leidos de un archivo (un valor por linea)
+python -m app.cli verificar --archivo datos.txt
+
+# Otros modelos
+python -m app.cli verificar --modelo d --cic 123456789 --ocr 1234567890123
+python -m app.cli verificar --modelo c --clave ABCDEF90010109H123 --emision 01 --ocr 1234567890123
+python -m app.cli verificar --modelo r --reporte 123456789012345678
+
+# Sin salir a internet
+python -m app.cli validar --clave ABCDEF90010109H123
+python -m app.cli entidades
+
+# Revisar una consulta anterior sin volver a pasar el captcha
+python -m app.cli verificar --modelo e --cic X --id Y --guardar-html salida.html
+python -m app.cli mostrar --html salida.html
+```
+
+Asi se ve un veredicto:
+
+```
++------------------------- Veredicto del INE --------------------------+
+|                                                                      |
+|  VIGENTE                                                             |
+|  Valida hasta el 31 de diciembre de 2033                             |
+|                                                                      |
+|  Esta vigente como medio de identificacion. Tus datos se encuentran  |
+|  en el Padron Electoral.                                             |
+|                                                                      |
++----------------------------------------------------------------------+
++-------------------+--------------------+
+| Dato              | Valor              |
++-------------------+--------------------+
+| CIC               | 111111111          |
+| Clave de elector  | ABCDEF90010109H123 |
+| Numero de emision | 1                  |
+| Distrito Federal  | 9                  |
+| Distrito Local    | 9                  |
+| Numero OCR        | 0000000000001      |
+| Anio de registro  | 2012               |
+| Anio de emision   | 2023               |
++-------------------+--------------------+
+```
+
+Con `--json` antes del subcomando devuelve JSON en vez de tablas, para
+encadenarlo con otras herramientas:
+
+```bash
+python -m app.cli --json verificar --archivo datos.txt | jq .estatus
+```
+
+Codigos de salida: `0` vigente, `3` cualquier otro veredicto, `1` fallo de
+consulta, `2` dato mal formado. Sirven para usarlo en scripts.
+
 ## Ejecucion
 
 ```bash
