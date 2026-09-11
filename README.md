@@ -85,6 +85,54 @@ cp .env.example .env
 
 ## La consola
 
+### Primeros pasos
+
+**1. Abre una terminal EN la carpeta del proyecto.** El CLI se invoca como
+modulo (`-m app.cli`), asi que Python necesita ver el paquete `app`. Desde otra
+carpeta falla con `No module named 'app'`.
+
+```bash
+cd C:\Moibe\codeerifine
+```
+
+**2. Activa el entorno virtual.** Ahi viven `rich` y `playwright`; con el
+Python global no funciona.
+
+```powershell
+.\.venv\Scripts\Activate.ps1     # PowerShell
+```
+
+```bash
+source .venv/Scripts/activate     # Git Bash
+.venv\Scriptsctivate.bat        # cmd
+```
+
+Sabras que quedo activo porque al prompt le aparece `(.venv)` delante.
+
+**3. Comprueba que responde**, con un comando que no sale a internet:
+
+```bash
+python -m app.cli entidades
+```
+
+Si salen las 32 entidades en una tabla, ya esta todo listo.
+
+**4. Consulta una credencial.** Esto SI abre una ventana de Chromium:
+
+```bash
+python -m app.cli verificar --modelo e --cic 123456789 --id 987654321
+```
+
+Lo que pasa, en orden: se abre el navegador, el CLI llena los campos solo, se
+detiene y te pide que marques el reCAPTCHA. En cuanto lo marcas, envia,
+captura el resultado, cierra el navegador y pinta el veredicto en tu terminal.
+Tienes 180 segundos para marcarlo (ajustable con `NAVEGADOR_TIMEOUT_CAPTCHA`).
+
+No cierres tu la ventana: el CLI la cierra solo al terminar.
+
+### Referencia de comandos
+
+
 Si no quieres levantar la API, hay un CLI que pinta el resultado en la
 terminal:
 
