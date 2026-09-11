@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     # persona. Por eso no hay opcion de headless.
     navegador_perfil_dir: str = ".navegador-perfil"
     navegador_timeout_captcha: float = 180.0
+    # El driver de Playwright a veces muere al arrancar (antivirus corporativo,
+    # contencion de recursos). Reintentar solo cuesta un segundo y casi siempre
+    # resuelve. Nunca se reintenta despues de pedir el captcha.
+    navegador_reintentos: int = 2
 
     # Limite de consultas por minuto por IP, para no golpear al INE.
     rate_limit_por_minuto: int = 10

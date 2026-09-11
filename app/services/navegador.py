@@ -33,6 +33,34 @@ class CaptchaNoResuelto(ErrorINE):
     """Nadie marco el reCAPTCHA dentro del tiempo de espera."""
 
 
+class ErrorDriver(ErrorINE):
+    """El driver de Playwright (un proceso node) murio al arrancar.
+
+    Suele ser transitorio. En equipos corporativos la causa habitual es un
+    antivirus o EDR que mata `node.exe` al detectar que lanza un navegador.
+    """
+
+
+# Firmas del driver cayendose, que no dependen del idioma del sistema.
+_FALLOS_DE_DRIVER = (
+    "connection closed while reading from the driver",
+    "connection closed",
+    "browser has been closed",
+    "target closed",
+    "driver",
+)
+
+
+def _es_fallo_de_driver(exc: BaseException) -> bool:
+    """Distingue un driver caido de un error de nuestro flujo.
+
+    Solo los primeros valen la pena reintentar: los segundos volverian a
+    fallar igual.
+    """
+    mensaje = str(exc).lower()
+    return any(firma in mensaje for firma in _FALLOS_DE_DRIVER)
+
+
 # Cada modelo vive en su propio <form> dentro de la misma pagina.
 _FORMULARIOS: dict[ModeloCredencial, dict] = {
     ModeloCredencial.C: {
@@ -101,6 +129,45 @@ class NavegadorINE:
         cfg = _FORMULARIOS[modelo]
         valores = _valores_formulario(consulta)
 
+        intentos = max(1, self._settings.navegador_reintentos)
+        ultimo: BaseException | None = None
+
+        for intento in range(1, intentos + 1):
+            # Registra si ya le pedimos a la persona que marque el captcha.
+            # A partir de ese punto no se reintenta: seria reabrir el
+            # navegador y obligarla a marcarlo otra vez sin explicacion.
+            estado = {"pidio_captcha": False}
+            try:
+                return await self._flujo(
+                    async_playwright, PWTimeout, cfg, valores, guardar_html, avisar, estado
+                )
+            except CaptchaNoResuelto:
+                raise
+            except Exception as exc:
+                ultimo = exc
+                if estado["pidio_captcha"] or not _es_fallo_de_driver(exc) or intento >= intentos:
+                    break
+                avisar(
+                    f"El navegador no arranco ({type(exc).__name__}). "
+                    f"Reintento {intento + 1} de {intentos}."
+                )
+
+        assert ultimo is not None
+        if _es_fallo_de_driver(ultimo):
+            raise ErrorDriver(
+                f"El driver de Playwright murio al arrancar ({ultimo}). "
+                f"Lo intente {intentos} vez/veces.\n\n"
+                "En equipos corporativos la causa mas comun es un antivirus o "
+                "EDR que mata node.exe cuando intenta lanzar un navegador. "
+                "Suele ser intermitente: volver a correr el comando funciona.\n\n"
+                "Para revisar tu entorno:  python -m app.cli diagnostico"
+            ) from ultimo
+        raise ultimo
+
+    async def _flujo(
+        self, async_playwright, PWTimeout, cfg, valores, guardar_html, avisar, estado
+    ) -> tuple[ResultadoParseado, str]:
+        """Un intento completo: abrir, capturar, esperar el captcha, enviar."""
         async with async_playwright() as pw:
             contexto = await pw.chromium.launch_persistent_context(
                 self._settings.navegador_perfil_dir,
@@ -134,6 +201,9 @@ class NavegadorINE:
                     f"Widget de captcha listo (textarea presente: {existe}). "
                     "Marca el reCAPTCHA en la ventana del navegador."
                 )
+                # Desde aqui ya hay una persona mirando el navegador: pase lo
+                # que pase, no se reintenta por detras.
+                estado["pidio_captcha"] = True
                 try:
                     await pagina.wait_for_function(
                         "sel => { const t = document.querySelector(sel);"

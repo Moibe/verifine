@@ -130,6 +130,33 @@ Tienes 180 segundos para marcarlo (ajustable con `NAVEGADOR_TIMEOUT_CAPTCHA`).
 
 No cierres tu la ventana: el CLI la cierra solo al terminar.
 
+### Si algo falla
+
+```bash
+python -m app.cli diagnostico
+```
+
+Revisa la cadena completa y senala el eslabon roto: Python, entorno virtual,
+paquete playwright, driver de node, Chromium headless, Chromium con interfaz y
+si el navegador alcanza el INE (comprobando que los 4 formularios esten ahi).
+
+**`Connection closed while reading from the driver`**
+
+Significa que el driver de Playwright (un proceso `node.exe`) murio al
+arrancar, antes de abrir el navegador. Es intermitente. En equipos
+corporativos el sospechoso habitual es el antivirus o EDR matando `node.exe`
+cuando intenta lanzar un navegador.
+
+El CLI ya reintenta solo (`NAVEGADOR_REINTENTOS`, 2 por omision), asi que lo
+normal es que no lo llegues a ver. Si persiste, pide que se excluyan de la
+inspeccion en tiempo real:
+
+- la carpeta del proyecto
+- `%LOCALAPPDATA%\ms-playwright`
+
+El reintento nunca ocurre despues de pedirte el captcha: reabrir el navegador
+en ese punto te obligaria a marcarlo otra vez sin explicacion.
+
 ### Referencia de comandos
 
 

@@ -248,6 +248,124 @@ def _mostrar(args) -> int:
     return 0 if resultado.estatus is EstatusLista.VIGENTE else 3
 
 
+async def _diagnostico(args) -> int:
+    """Revisa el entorno paso a paso y dice cual es el eslabon roto.
+
+    Existe porque "Connection closed while reading from the driver" no le dice
+    nada a nadie: hay que saber si fallo el paquete, el navegador, el driver o
+    la red.
+    """
+    import platform
+    import shutil
+
+    resultados: list[tuple[str, bool, str]] = []
+
+    def anota(nombre: str, ok: bool, detalle: str = "") -> None:
+        resultados.append((nombre, ok, detalle))
+
+    anota("Python", True, f"{platform.python_version()} - {sys.executable}")
+    en_venv = sys.prefix != getattr(sys, "base_prefix", sys.prefix)
+    anota("Entorno virtual activo", en_venv, sys.prefix if en_venv else "usando Python global")
+
+    try:
+        import playwright  # noqa: F401
+
+        anota("Paquete playwright", True, "importable")
+    except ImportError as exc:
+        anota("Paquete playwright", False, str(exc))
+        _pintar_diagnostico(resultados)
+        return 1
+
+    ruta_driver = shutil.which("node") or ""
+    try:
+        from playwright._impl._driver import compute_driver_executable
+
+        driver = str(compute_driver_executable()[0])
+        anota("Driver de node", pathlib_existe(driver), driver)
+    except Exception as exc:  # pragma: no cover
+        anota("Driver de node", False, f"{type(exc).__name__}: {exc} (node del sistema: {ruta_driver})")
+
+    # Arranque del driver, que es justo donde fallaba
+    try:
+        from playwright.async_api import async_playwright
+
+        async with async_playwright() as pw:
+            anota("Arranque del driver", True, "handshake correcto")
+            try:
+                b = await pw.chromium.launch(headless=True)
+                await b.close()
+                anota("Chromium headless", True, "abre y cierra")
+            except Exception as exc:
+                anota("Chromium headless", False, f"{type(exc).__name__}: {exc}")
+
+            # Esta es la prueba que de verdad importa: el navegador con
+            # interfaz, llegando al INE y viendo el formulario. Una sonda
+            # httpx no sirve aqui: Cloudflare la rechaza con 403 aunque el
+            # navegador funcione perfectamente.
+            ajustes = get_settings()
+            try:
+                ctx = await pw.chromium.launch_persistent_context(
+                    ajustes.navegador_perfil_dir, headless=False, locale="es-MX"
+                )
+                anota("Chromium con interfaz", True, "abre correctamente")
+                try:
+                    pagina = ctx.pages[0] if ctx.pages else await ctx.new_page()
+                    await pagina.goto(ajustes.ine_base_url, wait_until="domcontentloaded", timeout=30_000)
+                    formularios = await pagina.evaluate(
+                        "() => ['#formC','#formD','#formEFGH','#formR']"
+                        ".filter(s => document.querySelector(s)).length"
+                    )
+                    anota(
+                        "El navegador alcanza el INE",
+                        formularios == 4,
+                        f"{formularios} de 4 formularios presentes en {pagina.url}",
+                    )
+                finally:
+                    await ctx.close()
+            except Exception as exc:
+                anota("Chromium con interfaz", False, f"{type(exc).__name__}: {exc}")
+    except Exception as exc:
+        anota("Arranque del driver", False, f"{type(exc).__name__}: {exc}")
+
+    _pintar_diagnostico(resultados)
+    return 0 if all(ok for _, ok, _ in resultados) else 1
+
+
+def pathlib_existe(ruta: str) -> bool:
+    import pathlib
+
+    return pathlib.Path(ruta).exists()
+
+
+def _pintar_diagnostico(resultados) -> None:
+    tabla = Table(title="Diagnostico del entorno", header_style="bold")
+    tabla.add_column("Comprobacion")
+    tabla.add_column("Estado")
+    tabla.add_column("Detalle", overflow="fold")
+    for nombre, ok, detalle in resultados:
+        tabla.add_row(
+            nombre,
+            "[green]OK[/green]" if ok else "[red]FALLA[/red]",
+            detalle,
+        )
+    consola.print(tabla)
+
+    fallos = [n for n, ok, _ in resultados if not ok]
+    if not fallos:
+        consola.print("Todo en orden. Si aun asi falla, suele ser intermitente: reintenta.", style="green")
+        return
+
+    consola.print(f"\nEslabon roto: {', '.join(fallos)}", style="bold red")
+    if any("driver" in f.lower() or "Chromium" in f for f in fallos):
+        consola.print(
+            "Si el driver o Chromium fallan de forma intermitente, el sospechoso\n"
+            "habitual en equipos corporativos es el antivirus o EDR matando\n"
+            "node.exe. Pide que se excluya la carpeta del proyecto y\n"
+            "%LOCALAPPDATA%\\ms-playwright.",
+            style="yellow",
+        )
+
+
 def _entidades(args) -> int:
     if args.json:
         print(json.dumps(ENTIDADES, ensure_ascii=False, indent=2))
@@ -288,6 +406,7 @@ def construir_parser() -> argparse.ArgumentParser:
     m.add_argument("--html", required=True, help="Ruta al HTML de una consulta previa")
 
     sub.add_parser("entidades", help="Catalogo de entidades federativas")
+    sub.add_parser("diagnostico", help="Revisa el entorno y dice que esta roto")
 
     return p
 
@@ -302,6 +421,8 @@ def main(argv: list[str] | None = None) -> int:
         return _mostrar(args)
     if args.comando == "entidades":
         return _entidades(args)
+    if args.comando == "diagnostico":
+        return asyncio.run(_diagnostico(args))
     return 1
 
 
